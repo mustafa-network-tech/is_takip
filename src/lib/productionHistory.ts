@@ -32,6 +32,35 @@ export function normalizeGroupsFromDb(raw: unknown): ProjectGroup[] {
   }))
 }
 
+/** Seçilen ay içindeki her iş günü için kayıt sayısı (aynı gün birden fazla kayıt olabilir) */
+export async function fetchWorkDateCountsForMonth(
+  year: number,
+  monthIndex: number,
+): Promise<{ counts: Map<string, number>; error: string | null }> {
+  if (!supabase) {
+    return { counts: new Map(), error: 'Supabase yapılandırılmadı.' }
+  }
+  const m = String(monthIndex + 1).padStart(2, '0')
+  const start = `${year}-${m}-01`
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate()
+  const end = `${year}-${m}-${String(lastDay).padStart(2, '0')}`
+
+  const { data, error } = await supabase
+    .from('production_snapshots')
+    .select('work_date')
+    .gte('work_date', start)
+    .lte('work_date', end)
+
+  if (error) return { counts: new Map(), error: error.message }
+
+  const counts = new Map<string, number>()
+  for (const row of data ?? []) {
+    const wd = row.work_date as string
+    counts.set(wd, (counts.get(wd) ?? 0) + 1)
+  }
+  return { counts, error: null }
+}
+
 export async function fetchProductionSnapshots(): Promise<{
   data: ProductionSnapshotRow[] | null
   error: string | null

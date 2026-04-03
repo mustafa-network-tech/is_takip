@@ -1,6 +1,6 @@
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthScreen from './components/AuthScreen'
-import ProductionCardApp from './ProductionCardApp'
+import MainApp from './MainApp'
 
 function AuthenticatedApp() {
   const { session, loading } = useAuth()
@@ -17,7 +17,7 @@ function AuthenticatedApp() {
     return <AuthScreen />
   }
 
-  return <ProductionCardApp />
+  return <MainApp />
 }
 
 export default function App() {

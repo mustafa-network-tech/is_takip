@@ -19,6 +19,10 @@ type Props = {
   onNewBlankForm: () => void
   dateLocked: boolean
   onUseTodayDate: () => void
+  /** false: sadece liste (Yeni iş sayfasındaki bulut kaydı gizlenir) */
+  showSaveToCloud?: boolean
+  /** Liste-only modda “Yeni iş oluştur” ile düzenleyiciye git */
+  onOpenNewJob?: () => void
 }
 
 function previewTitles(row: ProductionSnapshotRow, max = 2): string {
@@ -49,6 +53,8 @@ export default function ProductionHistoryPanel({
   onNewBlankForm,
   dateLocked,
   onUseTodayDate,
+  showSaveToCloud = true,
+  onOpenNewJob,
 }: Props) {
   const inputCls =
     'mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10'
@@ -56,7 +62,8 @@ export default function ProductionHistoryPanel({
   if (disabledReason) {
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-900">
-        <p className="font-medium">Geçmiş kayıtlar kullanılamıyor</p>
+        <h2 className="text-base font-bold text-amber-950">Geçmiş işlerim</h2>
+        <p className="mt-2 font-medium">Geçmiş kayıtlar şu an kullanılamıyor</p>
         <p className="mt-1 text-xs text-amber-800/90">{disabledReason}</p>
       </div>
     )
@@ -65,7 +72,7 @@ export default function ProductionHistoryPanel({
   return (
     <div className="rounded-xl border border-zinc-200 bg-zinc-50/80 p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-zinc-900">Geçmiş işlerim</h2>
+        <h2 className="text-base font-bold text-zinc-900">Geçmiş işlerim</h2>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -75,17 +82,27 @@ export default function ProductionHistoryPanel({
           >
             {listLoading ? 'Yenileniyor…' : 'Listeyi yenile'}
           </button>
-          <button
-            type="button"
-            onClick={onNewBlankForm}
-            className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-          >
-            Boş forma dön
-          </button>
+          {showSaveToCloud ? (
+            <button
+              type="button"
+              onClick={onNewBlankForm}
+              className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+            >
+              Boş forma dön
+            </button>
+          ) : onOpenNewJob ? (
+            <button
+              type="button"
+              onClick={onOpenNewJob}
+              className="rounded-lg bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-sky-700"
+            >
+              Yeni iş oluştur
+            </button>
+          ) : null}
         </div>
       </div>
 
-      {dateLocked ? (
+      {showSaveToCloud && dateLocked ? (
         <p className="mt-2 text-[11px] text-zinc-600">
           Kart tarihi geçmiş kayıttan geliyor.{' '}
           <button
@@ -113,33 +130,43 @@ export default function ProductionHistoryPanel({
         />
       </div>
 
-      <div className="mt-3">
-        <button
-          type="button"
-          onClick={onSaveSnapshot}
-          disabled={saveBusy}
-          className="w-full rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60"
-        >
-          {saveBusy
-            ? 'Kaydediliyor…'
-            : loadedRecordId
-              ? 'Bu kaydı güncelle'
-              : 'Mevcut kartı geçmişe kaydet'}
-        </button>
-        {saveFeedback ? (
-          <p className="mt-2 text-xs text-zinc-600">{saveFeedback}</p>
-        ) : null}
-      </div>
+      {showSaveToCloud ? (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={onSaveSnapshot}
+            disabled={saveBusy}
+            className="w-full rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60"
+          >
+            {saveBusy
+              ? 'Kaydediliyor…'
+              : loadedRecordId
+                ? 'Bu kaydı güncelle'
+                : 'Mevcut kartı geçmişe kaydet'}
+          </button>
+          {saveFeedback ? (
+            <p className="mt-2 text-xs text-zinc-600">{saveFeedback}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {listError ? (
         <p className="mt-3 text-xs text-red-600">{listError}</p>
       ) : null}
 
-      <ul className="mt-3 max-h-[min(280px,40dvh)] space-y-2 overflow-y-auto pr-0.5">
+      <ul className="mt-3 max-h-[min(320px,45dvh)] space-y-2 overflow-y-auto pr-0.5 sm:max-h-[min(380px,50dvh)]">
         {snapshots.length === 0 && !listLoading ? (
           <li className="rounded-lg border border-dashed border-zinc-200 bg-white/80 px-3 py-6 text-center text-xs text-zinc-500">
-            Henüz kayıt yok. Formu doldurup &quot;Mevcut kartı geçmişe kaydet&quot; ile
-            ekleyin.
+            {showSaveToCloud ? (
+              <>
+                Henüz kayıt yok. Formu doldurup &quot;Mevcut kartı geçmişe kaydet&quot; ile
+                ekleyin.
+              </>
+            ) : (
+              <>
+                Henüz kayıt yok. &quot;Yeni iş oluştur&quot; ile kart ekleyip kaydedin.
+              </>
+            )}
           </li>
         ) : null}
         {snapshots.map((row) => (

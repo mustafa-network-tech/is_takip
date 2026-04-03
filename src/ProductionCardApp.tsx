@@ -1,21 +1,21 @@
 import type { CSSProperties } from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import html2canvas from 'html2canvas'
-import ProductionHistoryPanel from './components/ProductionHistoryPanel'
-import { useAuth } from './context/AuthContext'
 import {
-  deleteProductionSnapshot,
-  fetchProductionSnapshots,
   insertProductionSnapshot,
   normalizeGroupsFromDb,
   parseWorkDateToLocalDate,
-  snapshotMatchesQuery,
   toLocalISODate,
   updateProductionSnapshot,
   type ProductionSnapshotRow,
 } from './lib/productionHistory'
 import { isSupabaseConfigured } from './lib/supabase'
 import type { ImalatLine, ProjectGroup } from './types/production'
+
+export type ProductionCardAppProps = {
+  initialSnapshot?: ProductionSnapshotRow | null
+  onSaved?: () => void
+}
 
 /** html2canvas Tailwind’in oklab() çıktısını çözemediği için yalnızca hex/rgba */
 const ROW_CARD_THEMES: {
@@ -176,8 +176,10 @@ function isLikelyIOS(): boolean {
   )
 }
 
-export default function ProductionCardApp() {
-  const { user, signOut } = useAuth()
+export default function ProductionCardApp({
+  initialSnapshot = null,
+  onSaved,
+}: ProductionCardAppProps) {
   const [personName, setPersonName] = useState('Mustafa Öner')
   const [cardDate, setCardDate] = useState(() => new Date())
   const [dateLocked, setDateLocked] = useState(false)
@@ -187,31 +189,20 @@ export default function ProductionCardApp() {
   const [iosImageUrl, setIosImageUrl] = useState<string | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
 
-  const [historyRows, setHistoryRows] = useState<ProductionSnapshotRow[]>([])
-  const [historyLoading, setHistoryLoading] = useState(false)
-  const [historyError, setHistoryError] = useState<string | null>(null)
-  const [historySearch, setHistorySearch] = useState('')
   const [loadedRecordId, setLoadedRecordId] = useState<string | null>(null)
   const [saveBusy, setSaveBusy] = useState(false)
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
-  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null)
 
-  const refreshHistory = useCallback(async () => {
-    if (!isSupabaseConfigured) return
-    setHistoryLoading(true)
-    setHistoryError(null)
-    const { data, error } = await fetchProductionSnapshots()
-    setHistoryLoading(false)
-    if (error) {
-      setHistoryError(error)
-      return
-    }
-    setHistoryRows(data ?? [])
-  }, [])
-
-  useEffect(() => {
-    void refreshHistory()
-  }, [refreshHistory])
+  useLayoutEffect(() => {
+    if (!initialSnapshot) return
+    setPersonName(initialSnapshot.person_name)
+    const normalized = normalizeGroupsFromDb(initialSnapshot.groups)
+    setGroups(normalized.length ? normalized : [newGroup()])
+    setCardDate(parseWorkDateToLocalDate(initialSnapshot.work_date))
+    setDateLocked(true)
+    setLoadedRecordId(initialSnapshot.id)
+    setSaveFeedback(null)
+  }, [initialSnapshot?.id])
 
   useEffect(() => {
     if (dateLocked) return
@@ -227,21 +218,6 @@ export default function ProductionCardApp() {
       document.removeEventListener('visibilitychange', onVis)
     }
   }, [dateLocked])
-
-  const filteredHistory = useMemo(
-    () => historyRows.filter((r) => snapshotMatchesQuery(r, historySearch)),
-    [historyRows, historySearch],
-  )
-
-  const handleLoadSnapshot = useCallback((row: ProductionSnapshotRow) => {
-    setPersonName(row.person_name)
-    const normalized = normalizeGroupsFromDb(row.groups)
-    setGroups(normalized.length ? normalized : [newGroup()])
-    setCardDate(parseWorkDateToLocalDate(row.work_date))
-    setDateLocked(true)
-    setLoadedRecordId(row.id)
-    setSaveFeedback(null)
-  }, [])
 
   const handleNewBlankForm = useCallback(() => {
     setPersonName('Mustafa Öner')
@@ -287,30 +263,11 @@ export default function ProductionCardApp() {
         if (id) setLoadedRecordId(id)
         setSaveFeedback('Geçmişe kaydedildi.')
       }
-      await refreshHistory()
+      onSaved?.()
     } finally {
       setSaveBusy(false)
     }
-  }, [cardDate, personName, groups, loadedRecordId, refreshHistory])
-
-  const handleDeleteSnapshot = useCallback(
-    async (id: string) => {
-      setDeleteBusyId(id)
-      setHistoryError(null)
-      const { error } = await deleteProductionSnapshot(id)
-      setDeleteBusyId(null)
-      if (error) {
-        setHistoryError(error)
-        return
-      }
-      if (loadedRecordId === id) {
-        setLoadedRecordId(null)
-        setSaveFeedback(null)
-      }
-      await refreshHistory()
-    },
-    [loadedRecordId, refreshHistory],
-  )
+  }, [cardDate, personName, groups, loadedRecordId, onSaved])
 
   const updateGroup = useCallback((groupId: string, patch: Partial<ProjectGroup>) => {
     setGroups((prev) =>
@@ -458,61 +415,14 @@ export default function ProductionCardApp() {
     <div className="flex min-h-dvh flex-col lg:flex-row">
       {/* Sol: giriş */}
       <aside className="flex w-full shrink-0 flex-col border-zinc-200 bg-white lg:w-[min(440px,100%)] lg:border-r">
-        <div className="border-b border-zinc-100 px-5 py-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h1 className="text-lg font-semibold tracking-tight text-zinc-900">
-                Daily Production Card
-              </h1>
-              <p className="mt-0.5 text-sm text-zinc-500">
-                WhatsApp için günlük imalat kartı oluşturun
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-col items-end gap-1.5">
-              {user?.email ? (
-                <span
-                  className="max-w-[11rem] truncate text-[11px] text-zinc-500"
-                  title={user.email}
-                >
-                  {user.email}
-                </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => void signOut()}
-                className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-              >
-                Çıkış
-              </button>
-            </div>
-          </div>
+        <div className="border-b border-zinc-100 px-5 py-3">
+          <h2 className="text-base font-semibold text-zinc-900">Yeni iş — kart düzenle</h2>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            WhatsApp için günlük imalat kartı; üst menüden geçmişe gidebilirsiniz.
+          </p>
         </div>
 
         <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-5">
-          <ProductionHistoryPanel
-            snapshots={filteredHistory}
-            searchQuery={historySearch}
-            onSearchChange={setHistorySearch}
-            onRefresh={refreshHistory}
-            listLoading={historyLoading}
-            listError={historyError}
-            onLoadSnapshot={handleLoadSnapshot}
-            onDeleteSnapshot={(id) => void handleDeleteSnapshot(id)}
-            deleteBusyId={deleteBusyId}
-            onSaveSnapshot={() => void handleSaveSnapshot()}
-            saveBusy={saveBusy}
-            saveFeedback={saveFeedback}
-            loadedRecordId={loadedRecordId}
-            disabledReason={
-              isSupabaseConfigured
-                ? null
-                : 'Supabase URL / anon key eksik. .env veya Vercel ortam değişkenlerini kontrol edin.'
-            }
-            onNewBlankForm={handleNewBlankForm}
-            dateLocked={dateLocked}
-            onUseTodayDate={handleUseTodayDate}
-          />
-
           <div>
             <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
               Kart üstü: solda ad, sağda tarih (etiketsiz; tarih otomatik)
@@ -520,6 +430,18 @@ export default function ProductionCardApp() {
             <label className={labelCls} htmlFor="person-name">
               İsim
             </label>
+            {dateLocked ? (
+              <p className="mb-1 text-[11px] text-zinc-600">
+                Tarih geçmiş kayıttan.{' '}
+                <button
+                  type="button"
+                  onClick={handleUseTodayDate}
+                  className="font-medium text-zinc-900 underline decoration-zinc-400 underline-offset-2"
+                >
+                  Bugüne al
+                </button>
+              </p>
+            ) : null}
             <input
               id="person-name"
               type="text"
@@ -707,12 +629,43 @@ export default function ProductionCardApp() {
               ))}
             </ul>
           </div>
+
+          <div className="rounded-xl border border-sky-200 bg-sky-50/90 p-4 shadow-sm">
+            <p className="mb-2 text-xs font-medium text-sky-950">Buluta kaydet</p>
+            <button
+              type="button"
+              onClick={() => void handleSaveSnapshot()}
+              disabled={saveBusy}
+              className="w-full rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60"
+            >
+              {saveBusy
+                ? 'Kaydediliyor…'
+                : loadedRecordId
+                  ? 'Bu kaydı güncelle'
+                  : 'Mevcut kartı geçmişe kaydet'}
+            </button>
+            {saveFeedback ? (
+              <p className="mt-2 text-xs text-sky-900/90">{saveFeedback}</p>
+            ) : null}
+            {!isSupabaseConfigured ? (
+              <p className="mt-2 text-xs text-amber-800">
+                Supabase yapılandırması yok; kayıt çalışmaz.
+              </p>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleNewBlankForm}
+              className="mt-3 w-full rounded-lg border border-sky-300 bg-white py-2 text-xs font-medium text-sky-900 hover:bg-sky-100/80"
+            >
+              Formu sıfırla (boş kart)
+            </button>
+          </div>
         </div>
       </aside>
 
       {/* Sağ: önizleme */}
       <main className="flex flex-1 flex-col items-center bg-zinc-100/90 px-4 py-8">
-        <div className="mb-4 flex w-full max-w-2xl flex-col items-center gap-2 sm:flex-row sm:justify-center">
+        <div className="mb-4 flex w-full max-w-2xl flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center">
           <button
             type="button"
             onClick={downloadCard}
