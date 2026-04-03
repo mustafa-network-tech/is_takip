@@ -1,25 +1,21 @@
 import type { CSSProperties } from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import html2canvas from 'html2canvas'
+import ProductionHistoryPanel from './components/ProductionHistoryPanel'
 import { useAuth } from './context/AuthContext'
-
-/** Tek bir imalat satırı (aynı başlık+ID altında birden fazla olabilir) */
-type ImalatLine = {
-  id: string
-  name: string
-  quantity: string
-  unit: string
-  /** Boşsa kartta gösterilmez */
-  material: string
-}
-
-/** Aynı adres / proje: başlık + ID + altında çoklu imalat */
-type ProjectGroup = {
-  id: string
-  title: string
-  projectId: string
-  lines: ImalatLine[]
-}
+import {
+  deleteProductionSnapshot,
+  fetchProductionSnapshots,
+  insertProductionSnapshot,
+  normalizeGroupsFromDb,
+  parseWorkDateToLocalDate,
+  snapshotMatchesQuery,
+  toLocalISODate,
+  updateProductionSnapshot,
+  type ProductionSnapshotRow,
+} from './lib/productionHistory'
+import { isSupabaseConfigured } from './lib/supabase'
+import type { ImalatLine, ProjectGroup } from './types/production'
 
 /** html2canvas Tailwind’in oklab() çıktısını çözemediği için yalnızca hex/rgba */
 const ROW_CARD_THEMES: {
@@ -184,13 +180,41 @@ export default function ProductionCardApp() {
   const { user, signOut } = useAuth()
   const [personName, setPersonName] = useState('Mustafa Öner')
   const [cardDate, setCardDate] = useState(() => new Date())
+  const [dateLocked, setDateLocked] = useState(false)
   const [groups, setGroups] = useState<ProjectGroup[]>(() => [newGroup()])
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [iosImageUrl, setIosImageUrl] = useState<string | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
 
+  const [historyRows, setHistoryRows] = useState<ProductionSnapshotRow[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  const [historySearch, setHistorySearch] = useState('')
+  const [loadedRecordId, setLoadedRecordId] = useState<string | null>(null)
+  const [saveBusy, setSaveBusy] = useState(false)
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
+  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null)
+
+  const refreshHistory = useCallback(async () => {
+    if (!isSupabaseConfigured) return
+    setHistoryLoading(true)
+    setHistoryError(null)
+    const { data, error } = await fetchProductionSnapshots()
+    setHistoryLoading(false)
+    if (error) {
+      setHistoryError(error)
+      return
+    }
+    setHistoryRows(data ?? [])
+  }, [])
+
   useEffect(() => {
+    void refreshHistory()
+  }, [refreshHistory])
+
+  useEffect(() => {
+    if (dateLocked) return
     const tick = () => setCardDate(new Date())
     tick()
     const t = setInterval(tick, 60_000)
@@ -202,7 +226,91 @@ export default function ProductionCardApp() {
       clearInterval(t)
       document.removeEventListener('visibilitychange', onVis)
     }
+  }, [dateLocked])
+
+  const filteredHistory = useMemo(
+    () => historyRows.filter((r) => snapshotMatchesQuery(r, historySearch)),
+    [historyRows, historySearch],
+  )
+
+  const handleLoadSnapshot = useCallback((row: ProductionSnapshotRow) => {
+    setPersonName(row.person_name)
+    const normalized = normalizeGroupsFromDb(row.groups)
+    setGroups(normalized.length ? normalized : [newGroup()])
+    setCardDate(parseWorkDateToLocalDate(row.work_date))
+    setDateLocked(true)
+    setLoadedRecordId(row.id)
+    setSaveFeedback(null)
   }, [])
+
+  const handleNewBlankForm = useCallback(() => {
+    setPersonName('Mustafa Öner')
+    setGroups([newGroup()])
+    setCardDate(new Date())
+    setDateLocked(false)
+    setLoadedRecordId(null)
+    setSaveFeedback(null)
+  }, [])
+
+  const handleUseTodayDate = useCallback(() => {
+    setCardDate(new Date())
+    setDateLocked(false)
+  }, [])
+
+  const handleSaveSnapshot = useCallback(async () => {
+    setSaveFeedback(null)
+    if (!isSupabaseConfigured) {
+      setSaveFeedback('Supabase yapılandırılmadı.')
+      return
+    }
+    setSaveBusy(true)
+    const work_date = toLocalISODate(cardDate)
+    const payload = {
+      work_date,
+      person_name: personName.trim(),
+      groups,
+    }
+    try {
+      if (loadedRecordId) {
+        const { error } = await updateProductionSnapshot(loadedRecordId, payload)
+        if (error) {
+          setSaveFeedback(error)
+          return
+        }
+        setSaveFeedback('Kayıt güncellendi.')
+      } else {
+        const { id, error } = await insertProductionSnapshot(payload)
+        if (error) {
+          setSaveFeedback(error)
+          return
+        }
+        if (id) setLoadedRecordId(id)
+        setSaveFeedback('Geçmişe kaydedildi.')
+      }
+      await refreshHistory()
+    } finally {
+      setSaveBusy(false)
+    }
+  }, [cardDate, personName, groups, loadedRecordId, refreshHistory])
+
+  const handleDeleteSnapshot = useCallback(
+    async (id: string) => {
+      setDeleteBusyId(id)
+      setHistoryError(null)
+      const { error } = await deleteProductionSnapshot(id)
+      setDeleteBusyId(null)
+      if (error) {
+        setHistoryError(error)
+        return
+      }
+      if (loadedRecordId === id) {
+        setLoadedRecordId(null)
+        setSaveFeedback(null)
+      }
+      await refreshHistory()
+    },
+    [loadedRecordId, refreshHistory],
+  )
 
   const updateGroup = useCallback((groupId: string, patch: Partial<ProjectGroup>) => {
     setGroups((prev) =>
@@ -381,6 +489,30 @@ export default function ProductionCardApp() {
         </div>
 
         <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-5">
+          <ProductionHistoryPanel
+            snapshots={filteredHistory}
+            searchQuery={historySearch}
+            onSearchChange={setHistorySearch}
+            onRefresh={refreshHistory}
+            listLoading={historyLoading}
+            listError={historyError}
+            onLoadSnapshot={handleLoadSnapshot}
+            onDeleteSnapshot={(id) => void handleDeleteSnapshot(id)}
+            deleteBusyId={deleteBusyId}
+            onSaveSnapshot={() => void handleSaveSnapshot()}
+            saveBusy={saveBusy}
+            saveFeedback={saveFeedback}
+            loadedRecordId={loadedRecordId}
+            disabledReason={
+              isSupabaseConfigured
+                ? null
+                : 'Supabase URL / anon key eksik. .env veya Vercel ortam değişkenlerini kontrol edin.'
+            }
+            onNewBlankForm={handleNewBlankForm}
+            dateLocked={dateLocked}
+            onUseTodayDate={handleUseTodayDate}
+          />
+
           <div>
             <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
               Kart üstü: solda ad, sağda tarih (etiketsiz; tarih otomatik)
