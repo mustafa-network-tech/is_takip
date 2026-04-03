@@ -1,1 +1,1 @@
-export type AppView = 'dashboard' | 'new-job' | 'history'
+export type AppView = 'dashboard' | 'new-job' | 'history' | 'software'

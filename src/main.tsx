@@ -2,9 +2,18 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import AppErrorBoundary from './components/AppErrorBoundary.tsx'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+const rootEl = document.getElementById('root')
+if (!rootEl) {
+  document.body.innerHTML =
+    '<p style="font-family:sans-serif;padding:16px">#root bulunamadı. index.html kontrol edin.</p>'
+} else {
+  createRoot(rootEl).render(
+    <StrictMode>
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
+    </StrictMode>,
+  )
+}

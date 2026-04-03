@@ -1,6 +1,5 @@
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import html2canvas from 'html2canvas'
 import {
   insertProductionSnapshot,
   normalizeGroupsFromDb,
@@ -269,6 +268,27 @@ export default function ProductionCardApp({
     }
   }, [cardDate, personName, groups, loadedRecordId, onSaved])
 
+  /** İndir / paylaş başarılı olunca geçmişe yazar (sessiz; hata kullanıcıyı kesmez) */
+  const persistSnapshotSilently = useCallback(async () => {
+    if (!isSupabaseConfigured) return
+    const work_date = toLocalISODate(cardDate)
+    const payload = {
+      work_date,
+      person_name: personName.trim(),
+      groups,
+    }
+    if (loadedRecordId) {
+      const { error } = await updateProductionSnapshot(loadedRecordId, payload)
+      if (!error) onSaved?.()
+      return
+    }
+    const { id, error } = await insertProductionSnapshot(payload)
+    if (!error && id) {
+      setLoadedRecordId(id)
+      onSaved?.()
+    }
+  }, [cardDate, personName, groups, loadedRecordId, onSaved])
+
   const updateGroup = useCallback((groupId: string, patch: Partial<ProjectGroup>) => {
     setGroups((prev) =>
       prev.map((g) => (g.id === groupId ? { ...g, ...patch } : g)),
@@ -331,7 +351,19 @@ export default function ProductionCardApp({
     const stamp = formatStampForFilename(new Date())
     const filename = `gunluk-imalat-karti-${stamp}.png`
 
+    let didPersist = false
+    const persistOnceAfterSuccess = async () => {
+      if (didPersist) return
+      didPersist = true
+      try {
+        await persistSnapshotSilently()
+      } catch {
+        /* sessiz */
+      }
+    }
+
     try {
+      const { default: html2canvas } = await import('html2canvas')
       let canvas: HTMLCanvasElement
       try {
         canvas = await html2canvas(el, {
@@ -367,6 +399,7 @@ export default function ProductionCardApp({
       if (canShareFile) {
         try {
           await navigator.share({ files: [fileForShare] })
+          await persistOnceAfterSuccess()
           return
         } catch (err) {
           if (err instanceof DOMException && err.name === 'AbortError') return
@@ -387,13 +420,16 @@ export default function ProductionCardApp({
         const w = window.open(url, '_blank', 'noopener,noreferrer')
         if (!w) {
           setIosImageUrl(url)
+          await persistOnceAfterSuccess()
           return
         }
         window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+        await persistOnceAfterSuccess()
         return
       }
 
       window.setTimeout(() => URL.revokeObjectURL(url), 2500)
+      await persistOnceAfterSuccess()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       setExportError(
@@ -404,7 +440,7 @@ export default function ProductionCardApp({
     } finally {
       setExporting(false)
     }
-  }, [])
+  }, [persistSnapshotSilently])
 
   const inputCls =
     'mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10'
@@ -412,13 +448,14 @@ export default function ProductionCardApp({
   const labelCls = 'text-xs font-medium uppercase tracking-wide text-zinc-500'
 
   return (
-    <div className="flex min-h-dvh flex-col lg:flex-row">
+    <div className="flex w-full min-h-full flex-col lg:flex-row">
       {/* Sol: giriş */}
       <aside className="flex w-full shrink-0 flex-col border-zinc-200 bg-white lg:w-[min(440px,100%)] lg:border-r">
         <div className="border-b border-zinc-100 px-5 py-3">
-          <h2 className="text-base font-semibold text-zinc-900">Yeni iş — kart düzenle</h2>
+          <h2 className="text-base font-semibold text-zinc-900">Saha / imalat kartı</h2>
           <p className="mt-0.5 text-xs text-zinc-500">
-            WhatsApp için günlük imalat kartı; üst menüden geçmişe gidebilirsiniz.
+            Paylaşımlı günlük kart. Yazılım raporları için üst menüden &quot;Yazılım&quot;a
+            gidin.
           </p>
         </div>
 
@@ -682,7 +719,8 @@ export default function ProductionCardApp({
           </p>
         ) : (
           <p className="mb-4 max-w-md px-2 text-center text-xs text-zinc-500">
-            Telefonda önce paylaşım penceresi açılabilir (WhatsApp / Kaydet).
+            Paylaşım veya indirme başarılı olunca kart, geçmiş işlerinize otomatik
+            kaydedilir. Telefonda önce paylaşım penceresi açılabilir (WhatsApp / Kaydet).
             iPhone’da dosya inmezse açılan görüntüye uzun basıp kaydedin.
           </p>
         )}

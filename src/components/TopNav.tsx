@@ -58,6 +58,17 @@ export default function TopNav({
           </button>
           <button
             type="button"
+            onClick={() => onNavigate('software')}
+            className={`${navBtn} ${
+              active === 'software'
+                ? 'bg-indigo-600 text-white'
+                : 'border border-indigo-200 bg-indigo-50 text-indigo-900 hover:bg-indigo-100'
+            }`}
+          >
+            Yazılım
+          </button>
+          <button
+            type="button"
             onClick={() => onNavigate('history')}
             className={`${navBtn} ${
               active === 'history'
