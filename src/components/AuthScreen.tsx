@@ -38,7 +38,7 @@ VITE_SUPABASE_ANON_KEY=eyJ...`}
 }
 
 function AuthScreenForm() {
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, signInAnonymously } = useAuth()
   const [mode, setMode] = useState<Mode>('signIn')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -67,6 +67,17 @@ function AuthScreenForm() {
     }
   }
 
+  async function handleGuest() {
+    setMessage(null)
+    setBusy(true)
+    try {
+      const { error } = await signInAnonymously()
+      if (error) setMessage(error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center bg-zinc-100 px-4 py-10">
       <div className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
@@ -74,7 +85,7 @@ function AuthScreenForm() {
           Daily Production Card
         </h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Günlük imalat kartı — giriş veya kayıt
+          Günlük imalat kartı — giriş, kayıt veya misafir
         </p>
 
         <div className="mt-6 flex rounded-lg bg-zinc-100 p-1">
@@ -149,18 +160,6 @@ function AuthScreenForm() {
             />
           </div>
 
-          {message ? (
-            <p
-              className={`text-sm ${
-                message.includes('oluşturuldu') || message.includes('Giriş')
-                  ? 'text-emerald-700'
-                  : 'text-red-600'
-              }`}
-            >
-              {message}
-            </p>
-          ) : null}
-
           <button
             type="submit"
             disabled={busy}
@@ -173,6 +172,44 @@ function AuthScreenForm() {
                 : 'Kayıt ol'}
           </button>
         </form>
+
+        {message ? (
+          <p
+            className={`mt-4 text-sm ${
+              message.includes('oluşturuldu') || message.includes('Giriş')
+                ? 'text-emerald-700'
+                : 'text-red-600'
+            }`}
+          >
+            {message}
+          </p>
+        ) : null}
+
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center" aria-hidden>
+            <div className="w-full border-t border-zinc-200" />
+          </div>
+          <div className="relative flex justify-center text-xs font-medium uppercase tracking-wide text-zinc-400">
+            <span className="bg-white px-2">veya</span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void handleGuest()}
+          className="w-full rounded-xl border border-zinc-200 bg-zinc-50 py-3 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-100 disabled:opacity-60"
+        >
+          Üye olmadan devam et
+        </button>
+        <p className="mt-3 text-center text-xs leading-relaxed text-zinc-500">
+          Misafir oturumunda veriler yine hesabınıza bağlı kalır; çıkış yapınca bu
+          cihazdaki oturum sonlanır. Çalışması için Supabase’de{' '}
+          <span className="font-medium text-zinc-600">
+            Authentication → Providers → Anonymous
+          </span>{' '}
+          seçeneğinin açık olması gerekir.
+        </p>
       </div>
     </div>
   )

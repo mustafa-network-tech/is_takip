@@ -16,6 +16,8 @@ type AuthContextValue = {
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signUp: (email: string, password: string) => Promise<{ error: string | null }>
+  /** E-posta/şifre olmadan misafir oturumu (Supabase’de anonim giriş açık olmalı). */
+  signInAnonymously: () => Promise<{ error: string | null }>
   signOut: () => Promise<void>
 }
 
@@ -71,6 +73,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null }
   }, [])
 
+  const signInAnonymously = useCallback(async () => {
+    if (!supabase) return { error: 'Supabase yapılandırılmadı.' }
+    const { error } = await supabase.auth.signInAnonymously()
+    return { error: error?.message ?? null }
+  }, [])
+
   const signOut = useCallback(async () => {
     if (!supabase) return
     await supabase.auth.signOut()
@@ -83,9 +91,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       signIn,
       signUp,
+      signInAnonymously,
       signOut,
     }),
-    [session, loading, signIn, signUp, signOut],
+    [session, loading, signIn, signUp, signInAnonymously, signOut],
   )
 
   return (

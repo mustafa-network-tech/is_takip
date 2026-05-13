@@ -93,7 +93,9 @@ export default function MainApp() {
       <TopNav
         active={view}
         onNavigate={handleNavigate}
-        userEmail={user?.email}
+        userEmail={
+          user?.is_anonymous ? 'Misafir oturumu (üyelik yok)' : user?.email
+        }
         onSignOut={signOut}
       />
 
