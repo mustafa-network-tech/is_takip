@@ -140,14 +140,6 @@ function formatStampForFilename(d: Date): string {
   return `${yyyy}-${mm}-${dd}-${hh}${min}`
 }
 
-/** Kart üstü: GG.AA.YYYY */
-function formatCardDate(d: Date): string {
-  const dd = String(d.getDate()).padStart(2, '0')
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const yyyy = d.getFullYear()
-  return `${dd}.${mm}.${yyyy}`
-}
-
 function newImalatLine(): ImalatLine {
   return {
     id: crypto.randomUUID(),
@@ -462,7 +454,7 @@ export default function ProductionCardApp({
         <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-5">
           <div>
             <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-              Kart üstü: solda ad, sağda tarih (etiketsiz; tarih otomatik)
+              Geçmiş / kayıt için isim ve tarih (indirilen kart görselinde yer almaz)
             </p>
             <label className={labelCls} htmlFor="person-name">
               İsim
@@ -730,35 +722,6 @@ export default function ProductionCardApp({
           className="w-full max-w-[560px] rounded-2xl p-4 sm:p-6"
           style={CARD_OUTER_STYLE}
         >
-          <div
-            className="mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pb-4 sm:mb-5"
-            style={{ borderBottom: '1px solid #e4e4e7' }}
-          >
-            <div
-              className="min-w-0 flex-1 text-left"
-              style={{
-                fontSize: 18,
-                fontWeight: 600,
-                color: '#18181b',
-                lineHeight: 1.25,
-                wordBreak: 'break-word',
-              }}
-            >
-              {personName.trim() || '—'}
-            </div>
-            <div
-              className="shrink-0 text-right"
-              style={{
-                fontSize: 15,
-                fontWeight: 600,
-                color: '#18181b',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {formatCardDate(cardDate)}
-            </div>
-          </div>
-
           {/* Her proje: üst satırda başlık sol, ID sağ; altta çoklu imalat */}
           <div className="flex flex-col gap-4 sm:gap-5">
             {groups.map((group, groupIndex) => {
