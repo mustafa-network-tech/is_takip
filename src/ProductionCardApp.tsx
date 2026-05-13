@@ -1,20 +1,6 @@
 import type { CSSProperties } from 'react'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import {
-  insertProductionSnapshot,
-  normalizeGroupsFromDb,
-  parseWorkDateToLocalDate,
-  toLocalISODate,
-  updateProductionSnapshot,
-  type ProductionSnapshotRow,
-} from './lib/productionHistory'
-import { isSupabaseConfigured } from './lib/supabase'
+import { useCallback, useRef, useState } from 'react'
 import type { ImalatLine, ProjectGroup } from './types/production'
-
-export type ProductionCardAppProps = {
-  initialSnapshot?: ProductionSnapshotRow | null
-  onSaved?: () => void
-}
 
 /** html2canvas Tailwind’in oklab() çıktısını çözemediği için yalnızca hex/rgba */
 const ROW_CARD_THEMES: {
@@ -167,119 +153,16 @@ function isLikelyIOS(): boolean {
   )
 }
 
-export default function ProductionCardApp({
-  initialSnapshot = null,
-  onSaved,
-}: ProductionCardAppProps) {
-  const [personName, setPersonName] = useState('Mustafa Öner')
-  const [cardDate, setCardDate] = useState(() => new Date())
-  const [dateLocked, setDateLocked] = useState(false)
+export default function ProductionCardApp() {
   const [groups, setGroups] = useState<ProjectGroup[]>(() => [newGroup()])
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [iosImageUrl, setIosImageUrl] = useState<string | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
 
-  const [loadedRecordId, setLoadedRecordId] = useState<string | null>(null)
-  const [saveBusy, setSaveBusy] = useState(false)
-  const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
-
-  useLayoutEffect(() => {
-    if (!initialSnapshot) return
-    setPersonName(initialSnapshot.person_name)
-    const normalized = normalizeGroupsFromDb(initialSnapshot.groups)
-    setGroups(normalized.length ? normalized : [newGroup()])
-    setCardDate(parseWorkDateToLocalDate(initialSnapshot.work_date))
-    setDateLocked(true)
-    setLoadedRecordId(initialSnapshot.id)
-    setSaveFeedback(null)
-  }, [initialSnapshot?.id])
-
-  useEffect(() => {
-    if (dateLocked) return
-    const tick = () => setCardDate(new Date())
-    tick()
-    const t = setInterval(tick, 60_000)
-    const onVis = () => {
-      if (document.visibilityState === 'visible') tick()
-    }
-    document.addEventListener('visibilitychange', onVis)
-    return () => {
-      clearInterval(t)
-      document.removeEventListener('visibilitychange', onVis)
-    }
-  }, [dateLocked])
-
   const handleNewBlankForm = useCallback(() => {
-    setPersonName('Mustafa Öner')
     setGroups([newGroup()])
-    setCardDate(new Date())
-    setDateLocked(false)
-    setLoadedRecordId(null)
-    setSaveFeedback(null)
   }, [])
-
-  const handleUseTodayDate = useCallback(() => {
-    setCardDate(new Date())
-    setDateLocked(false)
-  }, [])
-
-  const handleSaveSnapshot = useCallback(async () => {
-    setSaveFeedback(null)
-    if (!isSupabaseConfigured) {
-      setSaveFeedback('Supabase yapılandırılmadı.')
-      return
-    }
-    setSaveBusy(true)
-    const work_date = toLocalISODate(cardDate)
-    const payload = {
-      work_date,
-      person_name: personName.trim(),
-      groups,
-    }
-    try {
-      if (loadedRecordId) {
-        const { error } = await updateProductionSnapshot(loadedRecordId, payload)
-        if (error) {
-          setSaveFeedback(error)
-          return
-        }
-        setSaveFeedback('Kayıt güncellendi.')
-      } else {
-        const { id, error } = await insertProductionSnapshot(payload)
-        if (error) {
-          setSaveFeedback(error)
-          return
-        }
-        if (id) setLoadedRecordId(id)
-        setSaveFeedback('Geçmişe kaydedildi.')
-      }
-      onSaved?.()
-    } finally {
-      setSaveBusy(false)
-    }
-  }, [cardDate, personName, groups, loadedRecordId, onSaved])
-
-  /** İndir / paylaş başarılı olunca geçmişe yazar (sessiz; hata kullanıcıyı kesmez) */
-  const persistSnapshotSilently = useCallback(async () => {
-    if (!isSupabaseConfigured) return
-    const work_date = toLocalISODate(cardDate)
-    const payload = {
-      work_date,
-      person_name: personName.trim(),
-      groups,
-    }
-    if (loadedRecordId) {
-      const { error } = await updateProductionSnapshot(loadedRecordId, payload)
-      if (!error) onSaved?.()
-      return
-    }
-    const { id, error } = await insertProductionSnapshot(payload)
-    if (!error && id) {
-      setLoadedRecordId(id)
-      onSaved?.()
-    }
-  }, [cardDate, personName, groups, loadedRecordId, onSaved])
 
   const updateGroup = useCallback((groupId: string, patch: Partial<ProjectGroup>) => {
     setGroups((prev) =>
@@ -341,18 +224,7 @@ export default function ProductionCardApp({
     setIosImageUrl(null)
 
     const stamp = formatStampForFilename(new Date())
-    const filename = `gunluk-imalat-karti-${stamp}.png`
-
-    let didPersist = false
-    const persistOnceAfterSuccess = async () => {
-      if (didPersist) return
-      didPersist = true
-      try {
-        await persistSnapshotSilently()
-      } catch {
-        /* sessiz */
-      }
-    }
+    const filename = `imalat-karti-${stamp}.png`
 
     try {
       const { default: html2canvas } = await import('html2canvas')
@@ -381,7 +253,6 @@ export default function ProductionCardApp({
         return
       }
 
-      // WhatsApp vb. paylaşımda `text`/`title` çoğu zaman görüntünün altında yazı olarak çıkar
       const fileForShare = new File([blob], 'imalat.png', { type: 'image/png' })
       const canShareFile =
         typeof navigator.share === 'function' &&
@@ -391,7 +262,6 @@ export default function ProductionCardApp({
       if (canShareFile) {
         try {
           await navigator.share({ files: [fileForShare] })
-          await persistOnceAfterSuccess()
           return
         } catch (err) {
           if (err instanceof DOMException && err.name === 'AbortError') return
@@ -412,16 +282,13 @@ export default function ProductionCardApp({
         const w = window.open(url, '_blank', 'noopener,noreferrer')
         if (!w) {
           setIosImageUrl(url)
-          await persistOnceAfterSuccess()
           return
         }
         window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
-        await persistOnceAfterSuccess()
         return
       }
 
       window.setTimeout(() => URL.revokeObjectURL(url), 2500)
-      await persistOnceAfterSuccess()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       setExportError(
@@ -432,7 +299,7 @@ export default function ProductionCardApp({
     } finally {
       setExporting(false)
     }
-  }, [persistSnapshotSilently])
+  }, [])
 
   const inputCls =
     'mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10'
@@ -441,47 +308,16 @@ export default function ProductionCardApp({
 
   return (
     <div className="flex w-full min-h-full flex-col lg:flex-row">
-      {/* Sol: giriş */}
       <aside className="flex w-full shrink-0 flex-col border-zinc-200 bg-white lg:w-[min(440px,100%)] lg:border-r">
         <div className="border-b border-zinc-100 px-5 py-3">
-          <h2 className="text-base font-semibold text-zinc-900">Saha / imalat kartı</h2>
+          <h2 className="text-base font-semibold text-zinc-900">İmalat kartı</h2>
           <p className="mt-0.5 text-xs text-zinc-500">
-            Paylaşımlı günlük kart. Yazılım raporları için üst menüden &quot;Yazılım&quot;a
-            gidin.
+            İşleri soldan girin; sağda kart önizlemesi oluşur. İsterseniz PNG indirin veya
+            paylaşın.
           </p>
         </div>
 
         <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-5">
-          <div>
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-              Geçmiş / kayıt için isim ve tarih (indirilen kart görselinde yer almaz)
-            </p>
-            <label className={labelCls} htmlFor="person-name">
-              İsim
-            </label>
-            {dateLocked ? (
-              <p className="mb-1 text-[11px] text-zinc-600">
-                Tarih geçmiş kayıttan.{' '}
-                <button
-                  type="button"
-                  onClick={handleUseTodayDate}
-                  className="font-medium text-zinc-900 underline decoration-zinc-400 underline-offset-2"
-                >
-                  Bugüne al
-                </button>
-              </p>
-            ) : null}
-            <input
-              id="person-name"
-              type="text"
-              value={personName}
-              onChange={(e) => setPersonName(e.target.value)}
-              placeholder="Ad Soyad"
-              className={inputCls}
-              autoComplete="name"
-            />
-          </div>
-
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <span className={`${labelCls} m-0`}>Projeler / adresler</span>
@@ -659,40 +495,18 @@ export default function ProductionCardApp({
             </ul>
           </div>
 
-          <div className="rounded-xl border border-sky-200 bg-sky-50/90 p-4 shadow-sm">
-            <p className="mb-2 text-xs font-medium text-sky-950">Buluta kaydet</p>
-            <button
-              type="button"
-              onClick={() => void handleSaveSnapshot()}
-              disabled={saveBusy}
-              className="w-full rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60"
-            >
-              {saveBusy
-                ? 'Kaydediliyor…'
-                : loadedRecordId
-                  ? 'Bu kaydı güncelle'
-                  : 'Mevcut kartı geçmişe kaydet'}
-            </button>
-            {saveFeedback ? (
-              <p className="mt-2 text-xs text-sky-900/90">{saveFeedback}</p>
-            ) : null}
-            {!isSupabaseConfigured ? (
-              <p className="mt-2 text-xs text-amber-800">
-                Supabase yapılandırması yok; kayıt çalışmaz.
-              </p>
-            ) : null}
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
             <button
               type="button"
               onClick={handleNewBlankForm}
-              className="mt-3 w-full rounded-lg border border-sky-300 bg-white py-2 text-xs font-medium text-sky-900 hover:bg-sky-100/80"
+              className="w-full rounded-lg border border-zinc-300 bg-white py-2.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
             >
-              Formu sıfırla (boş kart)
+              Formu sıfırla
             </button>
           </div>
         </div>
       </aside>
 
-      {/* Sağ: önizleme */}
       <main className="flex flex-1 flex-col items-center bg-zinc-100/90 px-4 py-8">
         <div className="mb-4 flex w-full max-w-2xl flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center">
           <button
@@ -711,9 +525,8 @@ export default function ProductionCardApp({
           </p>
         ) : (
           <p className="mb-4 max-w-md px-2 text-center text-xs text-zinc-500">
-            Paylaşım veya indirme başarılı olunca kart, geçmiş işlerinize otomatik
-            kaydedilir. Telefonda önce paylaşım penceresi açılabilir (WhatsApp / Kaydet).
-            iPhone’da dosya inmezse açılan görüntüye uzun basıp kaydedin.
+            Kart PNG olarak indirilir veya cihazınız paylaşımı destekliyorsa doğrudan
+            paylaşılır. iPhone’da dosya inmezse açılan görüntüye uzun basıp kaydedin.
           </p>
         )}
 
@@ -722,7 +535,6 @@ export default function ProductionCardApp({
           className="w-full max-w-[560px] rounded-2xl p-4 sm:p-6"
           style={CARD_OUTER_STYLE}
         >
-          {/* Her proje: üst satırda başlık sol, ID sağ; altta çoklu imalat */}
           <div className="flex flex-col gap-4 sm:gap-5">
             {groups.map((group, groupIndex) => {
               const theme =
